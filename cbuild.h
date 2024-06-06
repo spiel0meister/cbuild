@@ -35,6 +35,7 @@ typedef struct {
 typedef int Pid;
 
 bool is_path_modified_after(const char* path1, const char* path2);
+bool need_rebuild(const char* target, const char** srcs, size_t srcs_count);
 void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const char* src, const char* program);
 #define build_yourself(cmd, argc, argv) assert(*(argc) >= 1); build_yourself_(cmd, NULL, 0, __FILE__, **(argv))
 #define build_yourself_cflags(cmd, argc, argv, ...) do { \
@@ -43,6 +44,7 @@ void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const c
         size_t count = sizeof(cflags)/sizeof(cflags[0]); \
         build_yourself_(cmd, cflags, count, __FILE__, **(argv)); \
     } while (0)
+
 
 void cmd_resize(Cmd* cmd);
 
@@ -97,6 +99,16 @@ bool is_path_modified_after(const char* path1, const char* path2) {
         if (difftime(ctime2, ctime1) < 0) {
             return true;
         }
+    } else {
+        return true;
+    }
+
+    return false;
+}
+
+bool need_rebuild(const char* target, const char** srcs, size_t srcs_count) {
+    for (size_t i = 0; i < srcs_count; i++) {
+        if (is_path_modified_after(srcs[i], target)) return true;
     }
 
     return false;
