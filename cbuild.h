@@ -192,15 +192,7 @@ void cmd_push_str_(Cmd* cmd, ...) {
         if (cmd->count == cmd->capacity) {
             cmd_resize(cmd);
         }
-        if (!is_shell_safe(arg)) {
-            size_t new_len = strlen(arg) + 3;
-            char* cstr = malloc(new_len + 1);
-            snprintf(cstr, new_len, "\"%s\"", arg);
-            cstr[new_len] = 0;
-            cmd->items[cmd->count++] = cstr;
-        } else {
-            cmd->items[cmd->count++] = arg;
-        }
+        cmd->items[cmd->count++] = arg;
         arg = va_arg(args, char*);
     }
     va_end(args);
@@ -270,10 +262,13 @@ bool cmd_run_sync(Cmd* cmd, bool log_cmd) {
 
 void cmd_display(Cmd* cmd) {
     for (size_t i = 0; i < cmd->count; i++) {
-        if (i == cmd->count - 1) {
-            printf("%s\n", cmd->items[i]);
+        if (!is_shell_safe(cmd->items[i])) {
+            printf("'%s' ", cmd->items[i]);
         } else {
             printf("%s ", cmd->items[i]);
+        }
+        if (i == cmd->count - 1) {
+            printf("\n");
         }
     }
 }
