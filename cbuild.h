@@ -36,8 +36,15 @@ typedef int Pid;
 
 bool is_path_modified_after(const char* path1, const char* path2);
 void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const char* src, const char* program);
-#define build_yourself(cmd, program) build_yourself_(cmd, NULL, 0, __FILE__, program)
-#define build_yourself_cflags(cmd, cflags, count, program) build_yourself_(cmd, cflags, count, __FILE__, program)
+#define build_yourself(cmd, argc, argv) assert(*(argc) >= 1); build_yourself_(cmd, NULL, 0, __FILE__, **(argv))
+#define build_yourself_cflags(cmd, argc, argv, ...) do { \
+        assert(*(argc) >= 1); \
+        const char* cflags[] = { __VA_ARGS__ }; \
+        size_t count = sizeof(cflags)/sizeof(cflags[0]); \
+        build_yourself_(cmd, cflags, count, __FILE__, **(argv)); \
+    } while (0)
+
+void cmd_resize(Cmd* cmd);
 
 bool is_shell_safe(const char* str);
 void cmd_push_str_(Cmd* cmd, ...);
@@ -48,6 +55,13 @@ bool pid_wait(Pid pid);
 bool cmd_run_sync(Cmd* cmd, bool log_cmd);
 
 void cmd_display(Cmd* cmd);
+
+#define CMD(out, ...) do { \
+        const char* args[] = { __VA_ARGS__, NULL }; \
+        size_t len = sizeof(args)/sizeof(args[0]); \
+        Cmd __cmd = { .items = args, .count = len }; \
+        if ((out) != NULL) *(out) = cmd_run_sync(&__cmd); \
+    } while (0)
 
 #endif // CBUILD_H
 
@@ -67,6 +81,12 @@ void cmd_display(Cmd* cmd);
 #else
     #error "niche videogame os not supported"
 #endif
+
+void cmd_resize(Cmd* cmd) {
+    cmd->capacity = cmd->capacity == 0? 2 : cmd->capacity * 2;
+    cmd->items = realloc(cmd->items, sizeof(*cmd->items) * cmd->capacity);
+    assert(cmd->items);
+}
 
 bool is_path_modified_after(const char* path1, const char* path2) {
     struct stat st1, st2;
@@ -145,9 +165,7 @@ void cmd_push_str_(Cmd* cmd, ...) {
     char* arg = va_arg(args, char*);
     while (arg != NULL) {
         if (cmd->count == cmd->capacity) {
-            cmd->capacity = cmd->capacity == 0? 2 : cmd->capacity * 2;
-            cmd->items = realloc(cmd->items, sizeof(*cmd->items) * cmd->capacity);
-            assert(cmd->items);
+            cmd_resize(cmd);
         }
         if (!is_shell_safe(arg)) {
             size_t new_len = strlen(arg) + 3;
@@ -175,7 +193,10 @@ int cmd_run_async(Cmd* cmd, bool log_cmd) {
         fprintf(stderr, "[ERROR] couldn't start subprocces: %s\n", strerror(errno));
         exit(1);
     } else if (pid == 0) {
-        cmd->items[cmd->count++] = NULL;
+        if (cmd->count == cmd->capacity) cmd_resize(cmd);
+        if (cmd->items[cmd->count - 1] != NULL) {
+            cmd->items[cmd->count++] = NULL;
+        }
         if (execvp(cmd->items[0], cmd->items) != 0) {
             fprintf(stderr, "[DEBUG] %s\n", cmd->items[0]);
             fprintf(stderr, "[ERROR] couldn't execute command: %s\n", strerror(errno));
@@ -183,7 +204,9 @@ int cmd_run_async(Cmd* cmd, bool log_cmd) {
         }
         assert(0 && "unreachable");
     }
-    cmd->count--;
+    if (cmd->items[cmd->count - 2] != NULL) {
+        cmd->count--;
+    }
 
     return pid;
 }
