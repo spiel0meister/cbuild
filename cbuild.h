@@ -34,8 +34,11 @@ typedef struct {
 
 typedef int Pid;
 
+// Returns true if path1 was modified after path2
 bool is_path_modified_after(const char* path1, const char* path2);
-bool need_rebuild(const char* target, const char** srcs, size_t srcs_count);
+// Returns true if the source files were modified after the target file. The srcs array MUST be NULL terminated
+bool need_rebuild(const char* target, const char** srcs);
+// Rebuild the build program
 void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const char* src, const char* program);
 #define build_yourself(cmd, argc, argv) assert(*(argc) >= 1); build_yourself_(cmd, NULL, 0, __FILE__, **(argv))
 #define build_yourself_cflags(cmd, argc, argv, ...) do { \
@@ -46,16 +49,23 @@ void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const c
     } while (0)
 
 
+// Resize a CMD.
 void cmd_resize(Cmd* cmd);
 
+// Returns if a string is safe as a shell argument
 bool is_shell_safe(const char* str);
+// Pushes strings to a CMD
 void cmd_push_str_(Cmd* cmd, ...);
 #define cmd_push_str(cmd, ...) cmd_push_str_(cmd, __VA_ARGS__, NULL)
 
+// Runs the cmd and returns the pid of the process
 Pid cmd_run_async(Cmd* cmd, bool log_cmd);
+// Waits for a process to exit
 bool pid_wait(Pid pid);
+// Runs the cmd and returns if it was successful
 bool cmd_run_sync(Cmd* cmd, bool log_cmd);
 
+// Displays a CMD to stdout
 void cmd_display(Cmd* cmd);
 
 #define CMD(out, ...) do { \
@@ -106,9 +116,12 @@ bool is_path_modified_after(const char* path1, const char* path2) {
     return false;
 }
 
-bool need_rebuild(const char* target, const char** srcs, size_t srcs_count) {
-    for (size_t i = 0; i < srcs_count; i++) {
-        if (is_path_modified_after(srcs[i], target)) return true;
+bool need_rebuild(const char* target, const char** srcs) {
+    if (srcs == NULL) return true;
+
+    const char* src = *srcs;
+    while (src != NULL) {
+        if (is_path_modified_after(src, target)) return true;
     }
 
     return false;
@@ -139,7 +152,7 @@ void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const c
             if (!cmd_run_sync(cmd, false)) {
                 fprintf(stderr, "[WARN] failed to rename %s to %s\n", TMP_FILE_NAME, program);
             } else {
-                printf("[WARN] renamed %s to %s\n", TMP_FILE_NAME, program);
+                printf("[INFO] renamed %s to %s\n", TMP_FILE_NAME, program);
             }
             abort();
         } else {
