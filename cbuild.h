@@ -38,6 +38,7 @@ typedef int Pid;
 bool is_path_modified_after(const char* path1, const char* path2);
 // Returns true if the source files were modified after the target file. The srcs array MUST be NULL terminated
 bool need_rebuild(const char* target, const char** srcs);
+#define SRCS(...) ((const char*[]) { __VA_ARGS__, NULL })
 // Rebuild the build program
 void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const char* src, const char* program);
 #define build_yourself(cmd, argc, argv) assert(*(argc) >= 1); build_yourself_(cmd, NULL, 0, __FILE__, **(argv))
