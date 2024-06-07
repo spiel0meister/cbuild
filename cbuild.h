@@ -36,9 +36,14 @@ typedef int Pid;
 
 // Returns true if path1 was modified after path2
 bool is_path_modified_after(const char* path1, const char* path2);
+
+// Returns the provided path with the specified extension. "." MUST be specified by user
+char* path_with_ext(const char* path, const char* ext);
+
 // Returns true if the source files were modified after the target file. The srcs array MUST be NULL terminated
 bool need_rebuild(const char* target, const char** srcs);
 #define SRCS(...) ((const char*[]) { __VA_ARGS__, NULL })
+
 // Rebuild the build program
 void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const char* src, const char* program);
 #define build_yourself(cmd, argc, argv) assert(*(argc) >= 1); build_yourself_(cmd, NULL, 0, __FILE__, **(argv))
@@ -48,7 +53,6 @@ void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const c
         size_t count = sizeof(cflags)/sizeof(cflags[0]); \
         build_yourself_(cmd, cflags, count, __FILE__, **(argv)); \
     } while (0)
-
 
 // Resize a CMD.
 void cmd_resize(Cmd* cmd);
@@ -75,6 +79,10 @@ void cmd_display(Cmd* cmd);
         Cmd __cmd = { .items = args, .count = len }; \
         if ((out) != NULL) *(out) = cmd_run_sync(&__cmd); \
     } while (0)
+
+#ifndef CBUILD_MALLOC
+    #define CBUILD_MALLOC malloc
+#endif // CBUILD_MALLOC
 
 #endif // CBUILD_H
 
@@ -115,6 +123,26 @@ bool is_path_modified_after(const char* path1, const char* path2) {
     }
 
     return false;
+}
+
+char* path_with_ext(const char* path, const char* ext) {
+    size_t path_len = strlen(path);
+    size_t ext_len = strlen(ext);
+    const char* dot = strrchr(path, '.');
+    if (dot == NULL) {
+        char* out = CBUILD_MALLOC(path_len + ext_len + 1);
+        memcpy(out, path, path_len);
+        memcpy(out + path_len, ext, ext_len);
+        out[path_len + ext_len] = 0;
+        return out;
+    } else {
+        int pre_dot_len = dot - path;
+        char* out = CBUILD_MALLOC(pre_dot_len + ext_len + 1);
+        memcpy(out, path, pre_dot_len);
+        memcpy(out + pre_dot_len, ext, ext_len);
+        out[pre_dot_len + ext_len] = 0;
+        return out;
+    }
 }
 
 bool need_rebuild(const char* target, const char** srcs) {
