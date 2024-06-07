@@ -120,9 +120,8 @@ bool is_path_modified_after(const char* path1, const char* path2) {
 bool need_rebuild(const char* target, const char** srcs) {
     if (srcs == NULL) return true;
 
-    const char* src = *srcs;
-    while (src != NULL) {
-        if (is_path_modified_after(src, target)) return true;
+    for (int i = 0; srcs[i] != NULL; ++i) {
+        if (is_path_modified_after(srcs[i], target)) return true;
     }
 
     return false;
