@@ -260,14 +260,14 @@ bool pid_wait(int pid) {
     while (1) {
         int wstatus = 0;
         if (waitpid(pid, &wstatus, 0) < 0) {
-            fprintf(stderr, "[ERROR] could not wait on command (pid %d): %s", pid, strerror(errno));
+            fprintf(stderr, "[ERROR] could not wait on command (pid %d): %s\n", pid, strerror(errno));
             return false;
         }
 
         if (WIFEXITED(wstatus)) {
             int exit_status = WEXITSTATUS(wstatus);
             if (exit_status != 0) {
-                fprintf(stderr, "[ERROR] command exited with exit code %d", exit_status);
+                fprintf(stderr, "[ERROR] command exited with exit code %d\n", exit_status);
                 return false;
             }
 
@@ -275,7 +275,7 @@ bool pid_wait(int pid) {
         }
 
         if (WIFSIGNALED(wstatus)) {
-            fprintf(stderr, "[ERROR] command process was terminated");
+            fprintf(stderr, "[ERROR] command process was terminated\n");
             return false;
         }
     }
