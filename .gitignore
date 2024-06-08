@@ -1,5 +1,4 @@
 .clangd
 cbuild
-cbuild.c
 example/*
 !example/*.c
