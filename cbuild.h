@@ -57,6 +57,9 @@ void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const c
 // Resize a CMD.
 void cmd_resize(Cmd* cmd);
 
+// Creates a directory if it doesn't exist
+bool create_dir_if_not_exists(const char* path);
+
 // Returns if a string is safe as a shell argument
 bool is_shell_safe(const char* str);
 // Pushes strings to a CMD
@@ -209,6 +212,22 @@ bool is_shell_safe(const char* str) {
                 str++;
         }
     }
+    return true;
+}
+
+bool create_dir_if_not_exists(const char* path) {
+    if (mkdir(path, 0775) == -1) {
+        switch (errno) {
+            case EEXIST:
+                printf("[INFO] %s already exists\n", path);
+                return true;
+            default:
+                printf("[ERROR] %s\n", strerror(errno));
+                return false;
+        }
+    }
+    
+    printf("[INFO] created %s\n", path);
     return true;
 }
 
