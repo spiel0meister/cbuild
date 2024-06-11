@@ -45,13 +45,13 @@ bool need_rebuild(const char* target, const char** srcs);
 #define SRCS(...) ((const char*[]) { __VA_ARGS__, NULL })
 
 // Rebuild the build program
-void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const char* src, const char* program);
-#define build_yourself(cmd, argc, argv) assert(*(argc) >= 1); build_yourself_(cmd, NULL, 0, __FILE__, **(argv))
+void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const char* src, int argc, char** argv);
+#define build_yourself(cmd, argc, argv) assert(argc >= 1); build_yourself_(cmd, NULL, 0, __FILE__, argc, argv)
 #define build_yourself_cflags(cmd, argc, argv, ...) do { \
-        assert(*(argc) >= 1); \
+        assert(argc >= 1); \
         const char* cflags[] = { __VA_ARGS__ }; \
         size_t count = sizeof(cflags)/sizeof(cflags[0]); \
-        build_yourself_(cmd, cflags, count, __FILE__, **(argv)); \
+        build_yourself_(cmd, cflags, count, __FILE__, argc, argv); \
     } while (0)
 
 // Resize a CMD.
@@ -159,7 +159,8 @@ bool need_rebuild(const char* target, const char** srcs) {
 }
 
 #define TMP_FILE_NAME "./tmp"
-void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const char* src, const char* program) {
+void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const char* src, int argc, char** argv) {
+    const char* program = *argv++; argc--;
     if (is_path_modified_after(src, program)) {
         cmd_push_str(cmd, "mv", program, TMP_FILE_NAME);
         if (!cmd_run_sync(cmd, false)) { 
@@ -198,6 +199,9 @@ void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const c
 
         cmd->count = 0;
         cmd_push_str(cmd, program);
+        for (int i = 0; i < argc; ++i) {
+            cmd_push_str(cmd, argv[i]);
+        }
         cmd_run_sync(cmd, false);
         exit(0);
     }
