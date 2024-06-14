@@ -32,6 +32,11 @@ typedef struct {
     size_t capacity;
 }Cmd;
 
+typedef enum {
+    CC_GCC,
+    CC_CLANG,
+}CC;
+
 typedef int Pid;
 
 // Returns true if path1 was modified after path2
@@ -42,7 +47,7 @@ char* path_with_ext(const char* path, const char* ext);
 
 // Returns true if the source files were modified after the target file. The srcs array MUST be NULL terminated
 bool need_rebuild(const char* target, const char** srcs);
-#define SRCS(...) ((const char*[]) { __VA_ARGS__, NULL })
+#define STRS(...) ((const char*[]) { __VA_ARGS__, NULL })
 
 // Rebuild the build program
 void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const char* src, int argc, char** argv);
@@ -76,11 +81,14 @@ bool cmd_run_sync(Cmd* cmd, bool log_cmd);
 // Displays a CMD to stdout
 void cmd_display(Cmd* cmd);
 
+bool cmd_build_c(Cmd* cmd, CC cc, const char* target, const char** srcs, const char** cflags);
+
 #define CMD(out, ...) do { \
         const char* args[] = { __VA_ARGS__, NULL }; \
         size_t len = sizeof(args)/sizeof(args[0]); \
         Cmd __cmd = { .items = args, .count = len }; \
         if ((out) != NULL) *(out) = cmd_run_sync(&__cmd); \
+        else cmd_run_sync(&__cmd); \
     } while (0)
 
 #ifndef CBUILD_MALLOC
@@ -322,5 +330,40 @@ void cmd_display(Cmd* cmd) {
             printf("\n");
         }
     }
+}
+
+bool cmd_build_c(Cmd* cmd, CC cc, const char* target, const char** srcs, const char** cflags) {
+    if (need_rebuild(target, srcs)) {
+        switch (cc) {
+            case CC_GCC:
+                cmd_push_str(cmd, "gcc");
+                break;
+            case CC_CLANG:
+                cmd_push_str(cmd, "clang");
+                break;
+        }
+
+        if (cflags != NULL) {
+            const char* cflag = *cflags;
+            while (cflag != NULL) {
+                cmd_push_str(cmd, cflag);
+                cflag = *(++cflags);
+            }
+        }
+
+        cmd_push_str(cmd, "-o", target);
+
+        if (srcs != NULL) {
+            const char* src = *srcs;
+            while (src != NULL) {
+                cmd_push_str(cmd, src);
+                src = *(++srcs);
+            }
+        }
+
+        return cmd_run_sync(cmd, true);
+    }
+
+    return true;
 }
 #endif // CBUILD_IMPLEMENTATION
