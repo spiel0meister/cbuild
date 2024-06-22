@@ -48,6 +48,7 @@ char* path_with_ext(const char* path, const char* ext);
 // Returns true if the source files were modified after the target file. The srcs array MUST be NULL terminated
 bool need_rebuild(const char* target, const char** srcs);
 #define STRS(...) ((const char*[]) { __VA_ARGS__, NULL })
+#define STRS_LIT(...) { __VA_ARGS__, NULL }
 
 // Rebuild the build program
 void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const char* src, int argc, char** argv);
@@ -81,7 +82,7 @@ bool cmd_run_sync(Cmd* cmd, bool log_cmd);
 // Displays a CMD to stdout
 void cmd_display(Cmd* cmd);
 
-bool cmd_build_c(Cmd* cmd, CC cc, const char* target, const char** srcs, const char** cflags);
+bool cmd_maybe_build_c(Cmd* cmd, CC cc, const char* target, const char** srcs, const char** cflags);
 
 #define CMD(out, ...) do { \
         const char* args[] = { __VA_ARGS__, NULL }; \
@@ -332,7 +333,7 @@ void cmd_display(Cmd* cmd) {
     }
 }
 
-bool cmd_build_c(Cmd* cmd, CC cc, const char* target, const char** srcs, const char** cflags) {
+bool cmd_maybe_build_c(Cmd* cmd, CC cc, const char* target, const char** srcs, const char** cflags) {
     if (need_rebuild(target, srcs)) {
         switch (cc) {
             case CC_GCC:
