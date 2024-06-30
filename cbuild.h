@@ -32,12 +32,17 @@ typedef struct {
     size_t capacity;
 }Cmd;
 
-typedef enum {
-    CC_GCC,
-    CC_CLANG,
-}CC;
-
 typedef int Pid;
+
+#ifndef PIDS_INIT_CAP
+#define PIDS_INIT_CAP 128
+#endif // PIDS_INIT_CAP
+
+typedef struct {
+    Pid* items;
+    size_t count;
+    size_t capacity;
+}Pids;
 
 // Returns true if path1 was modified after path2
 bool is_path_modified_after(const char* path1, const char* path2);
@@ -73,16 +78,24 @@ void cmd_push_str_(Cmd* cmd, ...);
 #define cmd_push_str(cmd, ...) cmd_push_str_(cmd, __VA_ARGS__, NULL)
 
 // Runs the cmd and returns the pid of the process
-Pid cmd_run_async(Cmd* cmd, bool log_cmd);
+Pid cmd_run_async(Cmd* cmd);
 // Waits for a process to exit
 bool pid_wait(Pid pid);
+
+// Resizes a Pids to fit the specified count
+void pids_maybe_resize(Pids* pids, size_t count);
+// Appends a Pid to Pids
+void pids_append(Pids* pids, Pid pid);
+// Appends many Pids to Pids
+void pids_append_many(Pids* pids, Pid* pid_items, size_t pid_count);
+// Waits for all Pids and returns if all were successful
+bool pids_wait(Pids* pids);
+
 // Runs the cmd and returns if it was successful
-bool cmd_run_sync(Cmd* cmd, bool log_cmd);
+bool cmd_run_sync(Cmd* cmd);
 
 // Displays a CMD to stdout
 void cmd_display(Cmd* cmd);
-
-bool cmd_maybe_build_c(Cmd* cmd, CC cc, const char* target, const char** srcs, const char** cflags);
 
 #define CMD(out, ...) do { \
         const char* args[] = { __VA_ARGS__, NULL }; \
@@ -172,7 +185,7 @@ void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const c
     const char* program = *argv++; argc--;
     if (is_path_modified_after(src, program)) {
         cmd_push_str(cmd, "mv", program, TMP_FILE_NAME);
-        if (!cmd_run_sync(cmd, false)) { 
+        if (!cmd_run_sync(cmd)) { 
             fprintf(stderr, "[ERROR] failed to rename %s to %s\n", program, TMP_FILE_NAME);
             abort();
         }
@@ -187,10 +200,10 @@ void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const c
         }
         cmd_push_str(cmd, "-o", program, src);
 
-        if (!cmd_run_sync(cmd, true)) {
+        if (!cmd_run_sync(cmd)) {
             cmd->count = 0;
             cmd_push_str(cmd, "mv", TMP_FILE_NAME, program);
-            if (!cmd_run_sync(cmd, false)) {
+            if (!cmd_run_sync(cmd)) {
                 fprintf(stderr, "[WARN] failed to rename %s to %s\n", TMP_FILE_NAME, program);
             } else {
                 printf("[INFO] renamed %s to %s\n", TMP_FILE_NAME, program);
@@ -199,7 +212,7 @@ void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const c
         } else {
             cmd->count = 0;
             cmd_push_str(cmd, "rm", TMP_FILE_NAME);
-            if (!cmd_run_sync(cmd, false)) {
+            if (!cmd_run_sync(cmd)) {
                 fprintf(stderr, "[WARN] failed to delete %s\n", TMP_FILE_NAME);
             } else {
                 printf("[INFO] deleted %s\n", TMP_FILE_NAME);
@@ -211,7 +224,7 @@ void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const c
         for (int i = 0; i < argc; ++i) {
             cmd_push_str(cmd, argv[i]);
         }
-        cmd_run_sync(cmd, false);
+        cmd_run_sync(cmd);
         exit(0);
     }
 }
@@ -258,11 +271,9 @@ void cmd_push_str_(Cmd* cmd, ...) {
     va_end(args);
 }
 
-int cmd_run_async(Cmd* cmd, bool log_cmd) {
-    if (log_cmd) {
-        printf("[CMD] ");
-        cmd_display(cmd);
-    }
+int cmd_run_async(Cmd* cmd) {
+    printf("[CMD] ");
+    cmd_display(cmd);
 
     int pid = fork();
 
@@ -286,6 +297,36 @@ int cmd_run_async(Cmd* cmd, bool log_cmd) {
     }
 
     return pid;
+}
+
+void pids_maybe_resize(Pids* pids, size_t count) {
+    if (pids->count + count >= pids->capacity) {
+        if (pids->capacity == 0) pids->capacity = PIDS_INIT_CAP;
+        while (pids->count + count >= pids->capacity) {
+            pids->capacity *= 2;
+        } 
+        pids->items = realloc(pids->items, sizeof(pids->items[0]) * pids->capacity);
+    }
+}
+
+void pids_append(Pids* pids, Pid pid) {
+    pids_maybe_resize(pids, 1);
+    pids->items[pids->count++] = pid;
+}
+
+void pids_append_many(Pids* pids, Pid* pid_items, size_t pid_count) {
+    pids_maybe_resize(pids, pid_count);
+    for (int i = 0; (size_t)i < pid_count; ++i) {
+        pids->items[pids->count++] = pid_items[i];
+    }
+}
+
+bool pids_wait(Pids* pids) {
+    bool success = true;
+    for (size_t i = 0; i < pids->count; ++i) {
+        if (!pid_wait(pids->items[i])) success = false;
+    }
+    return success;
 }
 
 bool pid_wait(int pid) {
@@ -315,8 +356,8 @@ bool pid_wait(int pid) {
     return true;
 }
 
-bool cmd_run_sync(Cmd* cmd, bool log_cmd) {
-    int pid = cmd_run_async(cmd, log_cmd);
+bool cmd_run_sync(Cmd* cmd) {
+    int pid = cmd_run_async(cmd);
     return pid_wait(pid);
 }
 
@@ -333,38 +374,4 @@ void cmd_display(Cmd* cmd) {
     }
 }
 
-bool cmd_maybe_build_c(Cmd* cmd, CC cc, const char* target, const char** srcs, const char** cflags) {
-    if (need_rebuild(target, srcs)) {
-        switch (cc) {
-            case CC_GCC:
-                cmd_push_str(cmd, "gcc");
-                break;
-            case CC_CLANG:
-                cmd_push_str(cmd, "clang");
-                break;
-        }
-
-        if (cflags != NULL) {
-            const char* cflag = *cflags;
-            while (cflag != NULL) {
-                cmd_push_str(cmd, cflag);
-                cflag = *(++cflags);
-            }
-        }
-
-        cmd_push_str(cmd, "-o", target);
-
-        if (srcs != NULL) {
-            const char* src = *srcs;
-            while (src != NULL) {
-                cmd_push_str(cmd, src);
-                src = *(++srcs);
-            }
-        }
-
-        return cmd_run_sync(cmd, true);
-    }
-
-    return true;
-}
 #endif // CBUILD_IMPLEMENTATION
