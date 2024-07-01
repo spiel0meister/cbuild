@@ -44,6 +44,17 @@ typedef struct {
     size_t capacity;
 }Pids;
 
+typedef struct {
+    char name[256];
+    char path[1024];
+}File;
+
+typedef struct {
+    File* items;
+    size_t count;
+    size_t capacity;
+}Files;
+
 // Returns true if path1 was modified after path2
 bool is_path_modified_after(const char* path1, const char* path2);
 
@@ -51,9 +62,7 @@ bool is_path_modified_after(const char* path1, const char* path2);
 char* path_with_ext(const char* path, const char* ext);
 
 // Returns true if the source files were modified after the target file. The srcs array MUST be NULL terminated
-bool need_rebuild(const char* target, const char** srcs);
-#define STRS(...) ((const char*[]) { __VA_ARGS__, NULL })
-#define STRS_LIT(...) { __VA_ARGS__, NULL }
+bool need_rebuild(const char* target, Files* srcs);
 
 // Rebuild the build program
 void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const char* src, int argc, char** argv);
@@ -91,6 +100,18 @@ void pids_append_many(Pids* pids, Pid* pid_items, size_t pid_count);
 // Waits for all Pids and returns if all were successful
 bool pids_wait(Pids* pids);
 
+// Resizes a Files to fit the specified count
+void files_maybe_resize(Files* files, size_t count);
+// Appends a File to Files
+void files_append(Files* files, File file);
+// Appends many Files to Files
+void files_append_many(Files* files, File* file_items, size_t file_count);
+
+void files_list_null(Files* files, ...);
+#define files_list(files, ...) files_list_null(files, __VA_ARGS__, NULL)
+
+void dir_collect_files(Files* files, const char* dirpath, const char* ext, bool recursive);
+
 // Runs the cmd and returns if it was successful
 bool cmd_run_sync(Cmd* cmd);
 
@@ -124,6 +145,7 @@ void cmd_display(Cmd* cmd);
     #include <unistd.h>
     #include <sys/wait.h>
     #include <sys/stat.h>
+    #include <dirent.h>
 #else
     #error "niche videogame os not supported"
 #endif
@@ -170,11 +192,11 @@ char* path_with_ext(const char* path, const char* ext) {
     }
 }
 
-bool need_rebuild(const char* target, const char** srcs) {
+bool need_rebuild(const char* target, Files* srcs) {
     if (srcs == NULL) return true;
 
-    for (int i = 0; srcs[i] != NULL; ++i) {
-        if (is_path_modified_after(srcs[i], target)) return true;
+    for (int i = 0; i < srcs->count; ++i) {
+        if (is_path_modified_after(srcs->items[i].path, target)) return true;
     }
 
     return false;
@@ -354,6 +376,94 @@ bool pid_wait(int pid) {
     }
 
     return true;
+}
+
+void files_maybe_resize(Files* files, size_t count) {
+    if (files->count + count >= files->capacity) {
+        if (files->capacity == 0) files->capacity = PIDS_INIT_CAP;
+        while (files->count + count >= files->capacity) {
+            files->capacity *= 2;
+        } 
+        files->items = realloc(files->items, sizeof(files->items[0]) * files->capacity);
+    }
+}
+
+void files_append(Files* files, File file) {
+    files_maybe_resize(files, 1);
+    files->items[files->count++] = file;
+}
+
+void files_append_many(Files* files, File* file_items, size_t file_count) {
+    files_maybe_resize(files, file_count);
+    for (int i = 0; (size_t)i < file_count; ++i) {
+        files->items[files->count++] = file_items[i];
+    }
+}
+
+void files_list_null(Files* files, ...) {
+    va_list args;
+    va_start(args, files);
+
+    const char* filepath = va_arg(args, const char*);
+    for (; filepath != NULL; filepath = va_arg(args, const char*)) {
+        File file = {0};
+        char* as = strrchr(filepath, '/');
+
+        if (as == NULL) {
+            snprintf(file.name, 256, "%s", filepath);
+        } else {
+            snprintf(file.name, 256, "%s", as + 1);
+        }
+
+        snprintf(file.path, 1024, "%s", filepath);
+        files_append(files, file);
+    }
+
+    va_end(args);
+}
+#define files_list(files, ...) files_list_null(files, __VA_ARGS__, NULL)
+
+void dir_collect_files(Files* files, const char* dirpath, const char* ext, bool recursive) {
+    DIR* dirs[1024] = {0};
+    char dir_paths[1024][1024] = {0};
+    size_t dir_count = 0;
+
+    dirs[dir_count] = opendir(dirpath);
+    snprintf(dir_paths[dir_count++], 1024, "%s", dirpath);
+dir_while:while (dir_count > 0) {
+        DIR* dir = dirs[dir_count - 1];
+        char* dirpath = dir_paths[dir_count - 1];
+
+        if (dir == NULL) {
+            dir_count--;
+            continue;
+        }
+
+        struct dirent* ent = readdir(dir); 
+        for (; ent != NULL; ent = readdir(dir)) {
+            if (ent->d_type == DT_DIR) {
+                if (!recursive) continue;
+
+                dirs[dir_count] = opendir(ent->d_name);
+                snprintf(dir_paths[dir_count++], 1024, "%s/%s", dirpath, ent->d_name);
+                goto dir_while;
+            }
+
+            if (ext != NULL) {
+                char* dot = strchr(ent->d_name, '.');
+                if (dot != NULL && strcmp(dot, ext) != 0) continue;
+            }
+
+            File file = {0};
+            memcpy(file.name, ent->d_name, 256);
+            snprintf(file.path, 1024, "%s/%s", dirpath, ent->d_name);
+
+            files_append(files, file);
+        }
+
+        closedir(dir);
+        dir_count--;
+    }
 }
 
 bool cmd_run_sync(Cmd* cmd) {
