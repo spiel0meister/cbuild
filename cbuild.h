@@ -63,6 +63,7 @@ char* path_with_ext(const char* path, const char* ext);
 
 // Returns true if the source files were modified after the target file. The srcs array MUST be NULL terminated
 bool need_rebuild(const char* target, Files* srcs);
+#define need_rebuild1(target, src) is_path_modified_after(src, target)
 
 // Rebuild the build program
 void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const char* src, int argc, char** argv);
