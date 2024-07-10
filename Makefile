@@ -1,4 +1,4 @@
-CC=gcc -std=c2x
+CC=gcc
 CFLAGS=-Wall -Wextra -ggdb
 
 cbuild: cbuild.c cbuild.h

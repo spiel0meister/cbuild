@@ -55,6 +55,9 @@ typedef struct {
     size_t capacity;
 }Files;
 
+// Pops the first argument from the argv array
+char* pop_argv(int* argc, char*** argv);
+
 // Returns true if path1 was modified after path2
 bool is_path_modified_after(const char* path1, const char* path2);
 
@@ -151,6 +154,13 @@ void cmd_display(Cmd* cmd);
     #error "niche videogame os not supported"
 #endif
 
+char* pop_argv(int* argc, char*** argv) {
+    char* arg = **argv;
+    *argc -= 1;
+    *argv += 1;
+    return arg;
+}
+
 void cmd_resize(Cmd* cmd) {
     cmd->capacity = cmd->capacity == 0? 2 : cmd->capacity * 2;
     cmd->items = realloc(cmd->items, sizeof(*cmd->items) * cmd->capacity);
@@ -196,7 +206,7 @@ char* path_with_ext(const char* path, const char* ext) {
 bool need_rebuild(const char* target, Files* srcs) {
     if (srcs == NULL) return true;
 
-    for (int i = 0; i < srcs->count; ++i) {
+    for (size_t i = 0; i < srcs->count; ++i) {
         if (is_path_modified_after(srcs->items[i].path, target)) return true;
     }
 
