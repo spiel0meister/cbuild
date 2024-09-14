@@ -5,12 +5,10 @@
 
 void watch(Cmd* cmd) {
     cmd->count = 0;
-    Files srcs = {0};
-    files_list(&srcs, "example/one.c");
-    for(; 1; usleep(1 / 10)) {
+    for(;; usleep(100)) {
         size_t build_count = 0;
 
-        if (need_rebuild("example/one", &srcs)) {
+        if (need_rebuild1("example/one", "example/one.c")) {
             cmd_push_str(cmd, "gcc", "-Wall", "-Wextra", "-o", "example/one", "example/one.c");
             if (!cmd_run_sync(cmd)) exit(1);
             cmd->count = 0;
@@ -40,10 +38,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    Files srcs = {0};
-    files_list(&srcs, "example/one.c");
-
-    if (need_rebuild("example/one", &srcs)) {
+    if (need_rebuild1("example/one", "example/one.c")) {
         cmd_push_str(&cmd, "gcc", "-Wall", "-Wextra", "-o", "example/one", "example/one.c");
         if (!cmd_run_sync(&cmd)) return 1;
         cmd.count = 0;
