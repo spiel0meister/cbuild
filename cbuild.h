@@ -45,8 +45,7 @@ typedef struct {
 }Pids;
 
 typedef struct {
-    char name[256];
-    char path[1024];
+    char value[4069];
 }File;
 
 typedef struct {
@@ -84,6 +83,9 @@ void cmd_resize(Cmd* cmd);
 // Creates a directory if it doesn't exist
 bool create_dir_if_not_exists(const char* path);
 
+// Checks if a file exists
+bool file_exists(const char* path);
+
 // Returns if a string is safe as a shell argument
 bool is_shell_safe(const char* str);
 // Pushes strings to a CMD
@@ -118,6 +120,8 @@ void dir_collect_files(Files* files, const char* dirpath, const char* ext, bool 
 
 // Runs the cmd and returns if it was successful
 bool cmd_run_sync(Cmd* cmd);
+// Runs the cmd, resets it and returns if it was successful
+bool cmd_run_sync_and_reset(Cmd* cmd);
 
 // Displays a CMD to stdout
 void cmd_display(Cmd* cmd);
@@ -133,6 +137,18 @@ void cmd_display(Cmd* cmd);
 #ifndef CBUILD_MALLOC
     #define CBUILD_MALLOC malloc
 #endif // CBUILD_MALLOC
+
+
+// Logging
+
+#define log_info(...) do { printf("[INFO] "); printf(__VA_ARGS__); } while (0)
+#define log_warn(...) do { printf("[WARN] "); printf(__VA_ARGS__); } while (0)
+#define log_debug(...) do { printf("[DEBUG] "); printf(__VA_ARGS__); } while (0)
+#define log_error(...) do { printf("[ERROR] "); printf(__VA_ARGS__); } while (0)
+#define logf_info(f, ...) do { fprintf(f, "[INFO] "); fprintf(f, __VA_ARGS__); } while (0)
+#define logf_warn(f, ...) do { fprintf(f, "[WARN] "); fprintf(f, __VA_ARGS__); } while (0)
+#define logf_debug(f, ...) do { fprintf(f, "[DEBUG] "); fprintf(f, __VA_ARGS__); } while (0)
+#define logf_error(f, ...) do { fprintf(f, "[ERROR] "); fprintf(f, __VA_ARGS__); } while (0)
 
 #endif // CBUILD_H
 
@@ -168,19 +184,35 @@ void cmd_resize(Cmd* cmd) {
 }
 
 bool is_path_modified_after(const char* path1, const char* path2) {
-    struct stat st1, st2;
-    if (stat(path1, &st1) == 0 && stat(path2, &st2) == 0) {
-        time_t ctime1 = st1.st_mtime; 
-        time_t ctime2 = st2.st_mtime; 
+    struct stat statbuf;
 
-        if (difftime(ctime2, ctime1) < 0) {
-            return true;
-        }
-    } else {
+    if (stat(path1, &statbuf) < 0) {
+        fprintf(stderr, "Couldn't stat %s: %s\n", path1, strerror(errno));
+        return false;
+    }
+    time_t ctime1 = statbuf.st_mtime; 
+
+    if (stat(path2, &statbuf) < 0) {
         return true;
     }
+    time_t ctime2 = statbuf.st_mtime; 
 
-    return false;
+    return ctime1 >= ctime2;
+}
+
+bool file_exists(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (f == NULL) {
+        switch (errno) {
+            case ENOENT:
+                return false;
+            default:
+                logf_error(stderr, "Couldn't determine if %s exists: %s\n", path, strerror(errno));
+        }
+    }
+
+    if (f != NULL) fclose(f);
+    return true;
 }
 
 char* path_with_ext(const char* path, const char* ext) {
@@ -207,7 +239,7 @@ bool need_rebuild(const char* target, Files* srcs) {
     if (srcs == NULL) return true;
 
     for (size_t i = 0; i < srcs->count; ++i) {
-        if (is_path_modified_after(srcs->items[i].path, target)) return true;
+        if (is_path_modified_after(srcs->items[i].value, target)) return true;
     }
 
     return false;
@@ -219,11 +251,11 @@ void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const c
     if (is_path_modified_after(src, program)) {
         cmd_push_str(cmd, "mv", program, TMP_FILE_NAME);
         if (!cmd_run_sync(cmd)) { 
-            fprintf(stderr, "[ERROR] failed to rename %s to %s\n", program, TMP_FILE_NAME);
+            logf_error(stderr, "failed to rename %s to %s\n", program, TMP_FILE_NAME);
             abort();
         }
         cmd->count = 0;
-        printf("[INFO] renamed %s to %s\n", program, TMP_FILE_NAME);
+        log_info("renamed %s to %s\n", program, TMP_FILE_NAME);
 
         cmd_push_str(cmd, "gcc");
         if (cflags_count > 0) {
@@ -237,18 +269,18 @@ void build_yourself_(Cmd* cmd, const char** cflags, size_t cflags_count, const c
             cmd->count = 0;
             cmd_push_str(cmd, "mv", TMP_FILE_NAME, program);
             if (!cmd_run_sync(cmd)) {
-                fprintf(stderr, "[WARN] failed to rename %s to %s\n", TMP_FILE_NAME, program);
+                logf_warn(stderr, "failed to rename %s to %s\n", TMP_FILE_NAME, program);
             } else {
-                printf("[INFO] renamed %s to %s\n", TMP_FILE_NAME, program);
+                log_info("renamed %s to %s\n", TMP_FILE_NAME, program);
             }
             abort();
         } else {
             cmd->count = 0;
             cmd_push_str(cmd, "rm", TMP_FILE_NAME);
             if (!cmd_run_sync(cmd)) {
-                fprintf(stderr, "[WARN] failed to delete %s\n", TMP_FILE_NAME);
+                logf_warn(stderr, "failed to delete %s\n", TMP_FILE_NAME);
             } else {
-                printf("[INFO] deleted %s\n", TMP_FILE_NAME);
+                log_info("deleted %s\n", TMP_FILE_NAME);
             }
         }
 
@@ -278,15 +310,15 @@ bool create_dir_if_not_exists(const char* path) {
     if (mkdir(path, 0775) == -1) {
         switch (errno) {
             case EEXIST:
-                printf("[INFO] %s already exists\n", path);
+                log_info("%s already exists\n", path);
                 return true;
             default:
-                printf("[ERROR] %s\n", strerror(errno));
+                log_error("%s\n", strerror(errno));
                 return false;
         }
     }
     
-    printf("[INFO] created %s\n", path);
+    log_info("created %s\n", path);
     return true;
 }
 
@@ -311,7 +343,7 @@ int cmd_run_async(Cmd* cmd) {
     int pid = fork();
 
     if (pid < 0) {
-        fprintf(stderr, "[ERROR] couldn't start subprocces: %s\n", strerror(errno));
+        logf_error(stderr, "couldn't start subprocces: %s\n", strerror(errno));
         exit(1);
     } else if (pid == 0) {
         if (cmd->count == cmd->capacity) cmd_resize(cmd);
@@ -319,8 +351,8 @@ int cmd_run_async(Cmd* cmd) {
             cmd->items[cmd->count++] = NULL;
         }
         if (execvp(cmd->items[0], cmd->items) != 0) {
-            fprintf(stderr, "[DEBUG] %s\n", cmd->items[0]);
-            fprintf(stderr, "[ERROR] couldn't execute command: %s\n", strerror(errno));
+            logf_debug(stderr, "%s\n", cmd->items[0]);
+            logf_error(stderr, "couldn't execute command: %s\n", strerror(errno));
             exit(1);
         }
         assert(0 && "unreachable");
@@ -366,14 +398,14 @@ bool pid_wait(int pid) {
     while (1) {
         int wstatus = 0;
         if (waitpid(pid, &wstatus, 0) < 0) {
-            fprintf(stderr, "[ERROR] could not wait on command (pid %d): %s\n", pid, strerror(errno));
+            logf_error(stderr, "could not wait on command (pid %d): %s\n", pid, strerror(errno));
             return false;
         }
 
         if (WIFEXITED(wstatus)) {
             int exit_status = WEXITSTATUS(wstatus);
             if (exit_status != 0) {
-                fprintf(stderr, "[ERROR] command exited with exit code %d\n", exit_status);
+                logf_error(stderr, "command exited with exit code %d\n", exit_status);
                 return false;
             }
 
@@ -381,7 +413,7 @@ bool pid_wait(int pid) {
         }
 
         if (WIFSIGNALED(wstatus)) {
-            fprintf(stderr, "[ERROR] command process was terminated\n");
+            logf_error(stderr, "command process was terminated\n");
             return false;
         }
     }
@@ -418,15 +450,8 @@ void files_list_null(Files* files, ...) {
     const char* filepath = va_arg(args, const char*);
     for (; filepath != NULL; filepath = va_arg(args, const char*)) {
         File file = {0};
-        char* as = strrchr(filepath, '/');
+        memcpy(file.value, filepath, strlen(filepath) + 1);
 
-        if (as == NULL) {
-            snprintf(file.name, 256, "%s", filepath);
-        } else {
-            snprintf(file.name, 256, "%s", as + 1);
-        }
-
-        snprintf(file.path, 1024, "%s", filepath);
         files_append(files, file);
     }
 
@@ -436,11 +461,12 @@ void files_list_null(Files* files, ...) {
 
 void dir_collect_files(Files* files, const char* dirpath, const char* ext, bool recursive) {
     DIR* dirs[1024] = {0};
-    char dir_paths[1024][1024] = {0};
+    #pragma GCC diagnostic ignored "-Wrestrict"
+    char dir_paths[1024][4096] = {0};
     size_t dir_count = 0;
 
     dirs[dir_count] = opendir(dirpath);
-    snprintf(dir_paths[dir_count++], 1024, "%s", dirpath);
+    snprintf(dir_paths[dir_count++], 4096, "%s", dirpath);
 dir_while:while (dir_count > 0) {
         DIR* dir = dirs[dir_count - 1];
         char* dirpath = dir_paths[dir_count - 1];
@@ -456,6 +482,7 @@ dir_while:while (dir_count > 0) {
                 if (!recursive) continue;
 
                 dirs[dir_count] = opendir(ent->d_name);
+                #pragma GCC diagnostic ignored "-Wformat-truncation=0"
                 snprintf(dir_paths[dir_count++], 1024, "%s/%s", dirpath, ent->d_name);
                 goto dir_while;
             }
@@ -466,8 +493,9 @@ dir_while:while (dir_count > 0) {
             }
 
             File file = {0};
-            memcpy(file.name, ent->d_name, 256);
-            snprintf(file.path, 1024, "%s/%s", dirpath, ent->d_name);
+            #pragma GCC diagnostic ignored "-Wformat-truncation=0"
+            #pragma GCC diagnostic ignored "-Wstringop-overflow"
+            snprintf(file.value, 4096, "%s/%s", dirpath, ent->d_name);
 
             files_append(files, file);
         }
@@ -480,6 +508,12 @@ dir_while:while (dir_count > 0) {
 bool cmd_run_sync(Cmd* cmd) {
     int pid = cmd_run_async(cmd);
     return pid_wait(pid);
+}
+
+bool cmd_run_sync_and_reset(Cmd* cmd) {
+    bool ret = cmd_run_sync(cmd);
+    cmd->count = 0;
+    return ret;
 }
 
 void cmd_display(Cmd* cmd) {

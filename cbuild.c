@@ -10,8 +10,7 @@ void watch(Cmd* cmd) {
 
         if (need_rebuild1("example/one", "example/one.c")) {
             cmd_push_str(cmd, "gcc", "-Wall", "-Wextra", "-o", "example/one", "example/one.c");
-            if (!cmd_run_sync(cmd)) exit(1);
-            cmd->count = 0;
+            if (!cmd_run_sync_and_reset(cmd)) exit(1);
             build_count++;
         }
 
@@ -23,7 +22,7 @@ void watch(Cmd* cmd) {
 
 int main(int argc, char** argv) {
     Cmd cmd = {};
-    build_yourself_cflags(&cmd, argc, argv);
+    build_yourself(&cmd, argc, argv);
 
     const char* program = pop_argv(&argc, &argv);
 
@@ -40,8 +39,7 @@ int main(int argc, char** argv) {
 
     if (need_rebuild1("example/one", "example/one.c")) {
         cmd_push_str(&cmd, "gcc", "-Wall", "-Wextra", "-o", "example/one", "example/one.c");
-        if (!cmd_run_sync(&cmd)) return 1;
-        cmd.count = 0;
+        if (!cmd_run_sync_and_reset(&cmd)) return 1;
     }
 
     return 0;
